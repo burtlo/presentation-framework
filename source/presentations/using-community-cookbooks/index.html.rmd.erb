@@ -1,0 +1,1486 @@
+title: Using Community Cookbooks
+---
+# Using Community Cookbooks
+## Jenkins on Ubuntu 14.04
+
+---
+
+**Larry Eichenbaum -- Solutions Architect**
+
+**_larryebaum@chef.io | @larryebaum | LinkedIn: larryebaum_**
+
+<!-- SLIDE -->
+
+# Community Cookbooks
+
+* How many of you know what a Chef cookbook is?
+* How many of you have modified a cookbook?
+* How many of you have authored a cookbook?
+
+<!-- SLIDE -->
+
+# Community Cookbooks
+
+* How many of you have heard about Berkshelf?
+* How many of you have heard about Chef Supermarket?
+
+<!-- SLIDE -->
+
+# Community Cookbooks
+
+* How many of you have heard about community cookbooks?
+* How many of you use them?
+* How many of you don't use them?
+
+<!-- SLIDE -->
+
+# Community Cookbooks
+
+* How many of you have had a community cookbook fail on them?
+* How many of you submitted an issue?
+* How many of you submitted a pull request?
+* How many of you maintain a community cookbook?
+
+<!-- SLIDE -->
+
+# Community Cookbooks
+
+* How many of you are confused by community cookbook?
+
+<!-- SLIDE -->
+
+# Learning Objectives
+
+You will create a Jenkins cookbook, using resources that employ effective use of notifications and guards. Then when you are done, you will compare our implementation to the Jenkins community cookbook to help us understand it and evolve our implementation.
+
+<!-- SLIDE -->
+
+# Agenda
+
+<% unstyled_list do %>
+  <% icon_list_item('square-o') do %>
+    Login to workstation / Setup your workstation
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Create a cookbook and write a test
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Convert the Jenkins installation instructions
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    (SPOILER ALERT) Workaround installation of Java 8 on Ubuntu 14.04
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Review and refactor with community cookbooks
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Workstation Requirements
+
+This was tested on:
+
+* Chef Development Kit 2.4.17
+* Docker version 18.01.0-ce, build 03596f5
+* Internet access to retrieve the docker images / community cookbooks
+
+<!-- SLIDE -->
+
+# Your choice
+
+* Login to an AWS instance workstation provided
+* Or use your own workstation
+
+The best editing experience is, of course, going to be on your local workstation but 'interesting' problems may arise that make it impossible to continue. Of course, you can always develop locally, repeat remotely and then copy and paste.
+
+<!-- SLIDE -->
+
+# Login to workstation
+
+```bash
+# LOCAL WORKSTATION
+$ ssh ADDRESS -l USER
+The authenticity of host '54.209.164.144 (54.209.164.144)' can't be established.RSA key fingerprint is SHA256:tKoTsPbn6ER9BLThZqntXTxIYem3zV/iTQWvhLrBIBQ.Are you sure you want to continue connecting (yes/no)? yes
+chef@54.209.164.144's password: PASSWORD
+chef@ip-172-31-15-97 ~]$
+```
+
+<!-- SLIDE -->
+
+# Agenda
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    Login to workstation / Setup your workstation
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Create a cookbook and write a test
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Convert the Jenkins installation instructions
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    (SPOILER ALERT) Workaround installation of Java 8 on Ubuntu 14.04
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Review and refactor with community cookbooks
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Installing Jenkins on Ubuntu 14.04
+
+[https://wiki.jenkins.io/display/JENKINS/Installing+Jenkins+on+Ubuntu](https://wiki.jenkins.io/display/JENKINS/Installing+Jenkins+on+Ubuntu)
+
+What could possibly go wrong? Except the fact that the instructions shown here are declared **out of date**! The new instructions **DO NOT** take into consideration latest jenkins on Ubuntu 14.04. You'll start here and there will be surprises!
+
+```shell
+$ wget -q -O - https://pkg.jenkins.io/debian/jenkins-ci.org.key | sudo apt-key add -
+$ sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+$ sudo apt-get update
+$ sudo apt-get install jenkins
+```
+
+<!-- SLIDE -->
+
+# Create a cookbook
+
+```bash ~
+$ chef generate cookbook jenkins
+$ cd jenkins
+```
+
+<!-- SLIDE -->
+
+# Update the kitchen configuration
+
+Open the <% fp "~/jenkins/.kitchen.yml" %>. Replace this:
+
+```yaml ~/jenkins/.kitchen.yml
+driver:
+  name: vagrant
+[...]
+platforms:
+  - name: ubuntu-16.04
+  - name: centos-7
+[...]
+```
+
+with the following settings to use **docker driver without sudo and only the ubuntu 14.04 platform**.
+
+```yaml ~/jenkins/.kitchen.yml
+driver:
+  name: docker
+  use_sudo: false
+[...]
+platforms:
+  - name: ubuntu-14.04
+[...]
+```
+
+<!-- SLIDE -->
+
+# Set your group as the owner of the docker socket.
+
+```bash ~/jenkins
+$ sudo chown root:dockerroot /var/run/docker.sock
+```
+
+When the docker service restarts it resets the `docker.sock` group. Test Kitchen is about to use Docker to create a test environment for you.
+
+<!-- SLIDE -->
+
+# Verify that the kitchen configuration is correct
+
+```bash ~/jenkins
+$ kitchen list
+Instance             Driver  Provisioner  Verifier  Transport  Last Action    Last Error
+default-ubuntu-1404  Docker  ChefZero     Inspec    Ssh        <Not Created>  <None>
+```
+
+<!-- SLIDE -->
+
+# An example of a new Jenkins installation
+
+<!-- ![Jenkins authorization](/assets/images/presentations/using-community-cookbooks/jenkins-authorization-page.png) -->
+
+A successful installation of Jenkins will prompt you for a security key to complete the setup. This is the goal for the workshop.
+
+<!-- SLIDE -->
+
+# Add a test to describe our goal
+
+Let's start by defining a test to describe what you are about to accomplish. This single test helps ensure you know when you have completed the work successfully.
+
+```ruby ~/jenkins/test/smoke/default/default_test.rb
+describe command('curl http://localhost:8080') do
+  its(:stdout) { should match /Authentication required/ }
+end
+```
+
+The text 'Authentication required' is not found when displayed in the browser as it is only returned when you visit the site from the command-line.
+
+<!-- SLIDE -->
+
+# Run the test (knowing it fails)
+
+```bash ~/jenkins
+$ kitchen verify
+[...]
+```
+
+It's going to fail! While that's running, let's talk through implementing the recipe.
+
+<!-- SLIDE -->
+
+# Agenda
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    Login to workstation / Setup your workstation
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    Create a cookbook and write a test
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Convert the Jenkins installation instructions
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    (SPOILER ALERT) Workaround installation of Java 8 on Ubuntu 14.04
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Review and refactor with community cookbooks
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Start with the literal instructions
+
+TIP: Copying in the instructions as a guide to help you know what you need to get done.
+
+```ruby ~/jenkins/recipes/default.rb
+#
+# Cookbook:: jenkins
+# Recipe:: default
+#
+# Copyright:: 2018, The Authors, All Rights Reserved.
+
+# TODO: Convert to Chef
+# wget -q -O - https://pkg.jenkins.io/debian/jenkins-ci.org.key | sudo apt-key add -
+# sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+# sudo apt-get update
+# sudo apt-get install jenkins
+```
+
+<!-- SLIDE -->
+
+# Start with the easiest implementation
+
+The strategy of using `execute` for all the things!
+
+```ruby ~/jenkins/recipes/default.rb
+
+execute "wget -q -O - https://pkg.jenkins.io/debian/jenkins-ci.org.key | sudo apt-key add -"
+execute "sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'"
+execute "apt-get update"
+execute "apt-get install jenkins"
+```
+
+<!-- SLIDE -->
+
+# The execute resource is active
+
+The `execute` resource always take action! Whereas most every other resource will perform a test before they take action.
+
+<!-- SLIDE -->
+
+<!-- ![Test and Repair Logic Diagram](/assets/images/presentations/using-community-cookbooks/test-and-repair.png) -->
+
+You call this test and repair and while in some cases it may not hurt to attempt to install the package again or re-create the file. There are some instances where perform the operation a second time could result in an error. So the test will ensure the system is in a correct state.
+
+<!-- SLIDE -->
+
+# Find replacements for execute
+
+Let's work through each one of these commands and learn how you can refine the implementations.
+
+<% unstyled_list do %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute 'wget -q -O - https://pkg.jenkins.io/debian/..." %>
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute \"sh -c 'echo deb http://pkg.jenkins.io/debia..." %>
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute 'apt-get update'" %>
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute 'apt-get install jenkins'" %>
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# What is happening here?
+
+```shell
+$ wget -q -O - https://pkg.jenkins.io/debian/jenkins-ci.org.key | sudo apt-key add -
+```
+
+<!-- SLIDE -->
+
+# What is happening here?
+
+```shell
+$ wget -q -O - https://pkg.jenkins.io/debian/jenkins-ci.org.key | sudo apt-key add -
+```
+
+Downloads a file from a remote system and then adds that file as a apt-key
+
+<!-- SLIDE -->
+
+# Chef resource: remote_file
+
+A remote_file resource block manages files by using files that exist remotely. For example, to write the home page for an Apache website:
+
+```ruby title:Example
+remote_file '/var/www/customers/public_html/index.html' do
+  source 'http://somesite.com/index.html'
+  owner 'web_admin'
+  group 'web_admin'
+  mode '0755'
+  action :create
+end
+```
+
+<!-- SLIDE -->
+
+# `execute` - sudo is not required
+
+The `execute` resource runs as the user being used to converge the systems. This is generally a user that has sudoers access. The `execute` also allows you to specify a `user` property if you need a specific user.
+
+```ruby EXAMPLE
+execute "install q and zombiejs" do
+  cwd "/home/vagrant"
+  user "vagrant"
+  environment ({'HOME' => '/home/vagrant', 'USER' => 'vagrant'})
+  command "npm install -g q zombie should mocha coffee-script"
+  action :run
+end
+```
+
+<!-- SLIDE -->
+
+# Replace the execute resource
+
+The original execute resource is now a `remote_file` and an `execute`.
+
+```ruby ~/jenkins/recipes/default.rb
+
+remote_file '/tmp/jenkins-ci.org.key' do
+  source 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
+end
+
+execute 'apt-key add /tmp/jenkins-ci.org.key'
+```
+
+* The `remote_file` will retrieve and save the key the first time; after that it will use the cached key.
+* The `execute` will add the key every single time.
+
+<!-- SLIDE -->
+
+# Existing execution
+
+<!-- ![Test and Repair - remote_file tests the acts and execute acts execute](/assets/images/presentations/using-community-cookbooks/test-and-repair.png) -->
+
+<!-- SLIDE -->
+
+# Conditional execution
+
+<!-- ![Test and Repair Diagram with remote_file notifies execute](/assets/images/presentations/using-community-cookbooks/test-and-repair-diagram-remote_file-notifies-execute.png) -->
+
+It would be better if the `execute` resource only took action if the `remote_file` has downloaded an updated the key file.
+
+<!-- SLIDE -->
+
+# Conditional execution
+
+<!-- ![Resource A notifies Resource B OR Resource B subscribes to Resource A](/assets/images/presentations/using-community-cookbooks/notifies-and-subscribes.png) -->
+
+A resource, that has taken action, may **notify** one or more resources and tell them a specific action to perform. A resource may also **subscribe** to one or more resources and take a specific action when one of those resources have taken action.
+
+<!-- SLIDE -->
+
+# Resources can take the action :nothing
+
+<!-- ![Resource with nothing action in a resource collection not taking action](/assets/images/presentations/using-community-cookbooks/resource-with-nothing-action-not-acting.png) -->
+
+A resource that takes the `:nothing` action will remain **inactive** when the resource is converged unless they are notified and or one of the resources they subscribe to takes action. This is a useful way to create essentially join resources together.
+
+<!-- SLIDE -->
+
+# Take action now or later
+
+A resource that has been activated can take action `:immediately` or it can also be `:delayed`. The default is `:delayed`.
+
+<!-- ![Resource can signal to take action immediately or delayed](/assets/images/presentations/using-community-cookbooks/resource-signal-immediate-and-delayed.png) -->
+
+<!-- SLIDE -->
+
+# A Better replacement for the execute resource
+
+The `remote_file` will now notify the `execute` resource to take action `:immediately`. This is important as the correct key is required to be added in later resources in the current resource collection.
+
+```ruby ~/jenkins/recipes/default.rb
+
+remote_file '/tmp/jenkins-ci.org.key' do
+  source 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
+  notifies :run, 'execute[apt-key add /tmp/jenkins-ci.org.key]', :immediately
+end
+
+execute 'apt-key add /tmp/jenkins-ci.org.key' do
+  action :nothing
+end
+```
+
+<!-- SLIDE -->
+
+# 1 Down, 3 to Go
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute 'wget -q -O - https://pkg.jenkins.io/debian/..." %>
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute \"sh -c 'echo deb http://pkg.jenkins.io/debia..." %>
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute 'apt-get update'" %>
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute 'apt-get install jenkins'" %>
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# What is happening here?
+
+```shell
+$ sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+```
+
+<!-- SLIDE -->
+
+# What is happening here?
+
+```shell
+$ sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+```
+
+Creates a sub-shell and writes content to the a file
+
+<!-- SLIDE -->
+
+# The file resource
+
+The `file` resource allows you to specify the `content` property when you simply want to create a small file. The `cookbook_file` resource or the `template` resource help when you have larger files.
+
+```ruby ~/jenkins/recipes/default.rb
+
+file '/etc/apt/sources.list.d/jenkins.list' do
+  content 'deb http://pkg.jenkins.io/debian-stable binary/'
+end
+```
+
+<!-- SLIDE -->
+
+# 2 Down, 2 to Go
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute 'wget -q -O - https://pkg.jenkins.io/debian/..." %>
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute \"sh -c 'echo deb http://pkg.jenkins.io/debia..." %>
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute 'apt-get update'" %>
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute 'apt-get install jenkins'" %>
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# What is happening here?
+
+```shell
+$ apt-get update
+```
+
+<!-- SLIDE -->
+
+# What is happening here?
+
+```shell
+$ apt-get update
+```
+
+Updating the apt repository. Most likely because the Jenkins key and source location were added. Should this be executed every run or conditionally when the key is updated or perhaps you update the content property of the file resource?
+
+<!-- SLIDE -->
+
+# The updated file triggers an package repository update
+
+```ruby ~/jenkins/recipes/default.rb
+
+file '/etc/apt/sources.list.d/jenkins.list'
+  content 'deb http://pkg.jenkins.io/debian-stable binary/'
+  notifies :run, 'execute[apt-get update]', :immediately
+end
+
+execute 'apt-get install apt-transport-https -y'
+
+execute 'apt-get update' do
+  action :nothing
+end
+```
+
+<!-- SLIDE -->
+
+# 3 Down, 1 to Go
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute 'wget -q -O - https://pkg.jenkins.io/debian/..." %>
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute \"sh -c 'echo deb http://pkg.jenkins.io/debia..." %>
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute 'apt-get update'" %>
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    <% fp "execute 'apt-get install jenkins'" %>
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# What is happening here?
+
+```shell
+$ execute 'apt-get install jenkins'
+```
+
+<!-- SLIDE -->
+
+# What is happening here?
+
+```shell
+$ execute 'apt-get install jenkins'
+```
+
+This installs the jenkins package through the package repository
+
+<!-- SLIDE -->
+
+# The package resource
+
+The `package` resource will communicate with the host OS's package manager.
+
+```ruby ~/jenkins/recipes/default.rb
+
+package 'jenkins'
+```
+
+<!-- SLIDE -->
+
+# All done
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute 'wget -q -O - https://pkg.jenkins.io/debian/..." %>
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute \"sh -c 'echo deb http://pkg.jenkins.io/debia..." %>
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute 'apt-get update'" %>
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    <% fp "execute 'apt-get install jenkins'" %>
+  <% end %>
+<% end %>
+
+
+<!-- SLIDE -->
+
+# Finished Recipe
+
+This is results of our conversion from scripts to resources.
+
+```ruby ~/jenkins/recipes/default.rb
+remote_file '/tmp/jenkins-ci.org.key' do
+  source 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
+  notifies :run, 'execute[apt-key add /tmp/jenkins-ci.org.key]', :immediately
+end
+
+execute 'apt-key add /tmp/jenkins-ci.org.key' do
+  action :nothing
+end
+
+file '/etc/apt/sources.list.d/jenkins.list' do
+  content 'deb http://pkg.jenkins.io/debian-stable binary/'
+  notifies :run, 'execute[apt-get update]', :immediately
+end
+
+execute 'apt-get update' do
+  action :nothing
+end
+
+package 'jenkins'
+```
+
+<!-- SLIDE -->
+
+# Converge (and fail)
+
+```bash ~/jenkins
+$ kitchen converge
+[...]
+The following packages have unmet dependencies:
+  jenkins : Depends: default-jre-headless (>= 2:1.8) but it is not going to be installed or
+              java8-runtime-headless but it is not installable
+ STDERR: E: Unable to correct problems, you have held broken packages.
+ ---- End output of ["apt-get", "-q", "-y", "install", "jenkins=2.89.3"] ----
+ Ran ["apt-get", "-q", "-y", "install", "jenkins=2.89.3"] returned 100
+ [2018-01-19T21:09:37+00:00] ERROR: apt_package[jenkins] (jenkins::default line 19) had an error: Mixlib::ShellOut::ShellCommandFailed: Expected process to exit with [0], but received '100'
+```
+
+<!-- SLIDE -->
+
+# Agenda
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    Login to workstation / Setup your workstation
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    Create a cookbook and write a test
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    Convert the Jenkins installation instructions
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    (SPOILER ALERT) Workaround installation of Java 8 on Ubuntu 14.04
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Review and refactor with community cookbooks
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Jenkins has a requirement on Java 8
+
+Ubuntu 14.04 does not provide Java 8 through existing package repositories so you need to add a new package repository, update the repository, and then install the package.
+
+```shell
+$ sudo apt-get install software-properties-common
+$ sudo add-apt-repository ppa:openjdk-r/ppa
+$ sudo apt-get update
+$ sudo apt-get install openjdk-8-jre-headless
+```
+
+<!-- SLIDE -->
+
+# Append the installation instructions
+
+```ruby ~/jenkins/recipes/default.rb
+[...]
+
+execute 'apt-get update' do
+  action :nothing
+end
+
+# apt-get install software-properties-common
+# add-apt-repository ppa:openjdk-r/ppa
+# apt-get update
+# apt-get install openjdk-8-jre-headless
+
+package 'jenkins'
+```
+
+<!-- SLIDE -->
+
+# Start the conversion to Chef
+
+```ruby ~/jenkins/recipes/default.rb
+[...]
+
+execute 'apt-get update' do
+  action :nothing
+end
+
+# apt-get install software-properties-common
+package 'software-properties-common'
+
+# add-apt-repository ppa:openjdk-r/ppa
+execute 'add-apt-repository ppa:openjdk-r/ppa'
+
+# apt-get update
+execute 'apt-get update'
+
+# apt-get install openjdk-8-jre-headless
+package 'openjdk-8-jre-headless'
+
+package 'jenkins'
+```
+
+<!-- SLIDE -->
+
+# Converge
+
+```bash ~/jenkins
+$ kitchen converge
+-----> Starting Kitchen (v1.19.2)
+-----> Converging <default-ubuntu-1404>...
+         * execute[add-apt-repository ppa:openjdk-r/ppa] action run
+           - execute add-apt-repository ppa:openjdk-r/ppa
+         * execute[apt-get update] action run
+           - execute apt-get update
+         * apt_package[openjdk-8-jre-headless] action install
+           - install version 8u141-b15-3~14.04 of package openjdk-8-jre-headless
+         * apt_package[jenkins] action install
+           - install version 2.89.3 of package jenkins
+
+       Running handlers:
+       Running handlers complete
+       Chef Client finished, 5/9 resources updated in 03 minutes 41 seconds
+       Finished converging <default-ubuntu-1404> (3m46.11s).
+-----> Kitchen is finished. (3m47.96s)
+```
+
+<!-- SLIDE -->
+
+# Verify
+
+```bash ~/jenkins
+$ kitchen verify
+
+  Command curl
+     ∅  http://localhost:8080 stdout should match /Authentication required/
+     expected "" to match /Authentication required/
+     Diff:
+     @@ -1,2 +1,2 @@
+     -/Authentication required/
+     +""
+
+
+Test Summary: 0 successful, 1 failure, 0 skipped
+```
+
+The verify fails so let's take a look at what is happening on the system.
+
+<!-- SLIDE -->
+
+# Login
+
+```bash ~/jenkins
+$ kitchen login
+Last login: Mon Jan 22 17:11:13 2018 from 172.17.0.1
+kitchen@6131b751ea97:~$ sudo service jenkins status
+Invalid --pidfile argument: '/var/run/jenkins/jenkins.pid' (Parent directory does not exist)
+[...]
+Jenkins Automation Server is not running
+```
+
+The package is now installed but the service is not running.
+
+<!-- SLIDE -->
+
+# Starting the jenkins service
+
+```ruby ~/jenkins/recipes/default.rb
+[...]
+package 'software-properties-common'
+
+execute 'add-apt-repository ppa:openjdk-r/ppa'
+
+execute 'apt-get update'
+
+package 'openjdk-8-jre-headless'
+
+package 'jenkins'
+
+# service jenkins start
+```
+
+<!-- SLIDE -->
+
+# The service resource
+
+A service resource block manages the state of a service.
+
+```ruby Example
+service 'apache' do
+  action [ :enable, :start ]
+end
+```
+
+* `:enable` - enable a service at boot
+* `:start` - start a service, and keep it running until stopped or disabled
+
+<!-- SLIDE -->
+
+# Starting the jenkins service
+
+```ruby ~/jenkins/recipes/default.rb
+[...]
+package 'software-properties-common'
+
+execute 'add-apt-repository ppa:openjdk-r/ppa'
+
+execute 'apt-get update'
+
+package 'openjdk-8-jre-headless'
+
+package 'jenkins'
+
+service 'jenkins' do
+  action [ :enable, :start ]
+end
+```
+
+<!-- SLIDE -->
+
+# Converge
+
+```bash ~/jenkins
+$ kitchen converge
+-----> Starting Kitchen (v1.19.2)
+-----> Converging <default-ubuntu-1404>...
+[...]
+* service[jenkins] action start
+  - start service service[jenkins]
+* service[jenkins] action enable (up to date)
+
+Running handlers:
+Running handlers complete
+Chef Client finished, 5/12 resources updated in 48 seconds
+Finished converging <default-ubuntu-1404> (0m53.33s).
+```
+
+The jenkins service, like most Java web applications, takes a few minutes to become active.
+
+<!-- SLIDE -->
+
+# Verify
+
+```bash ~/jenkins
+$ kitchen verify
+-----> Starting Kitchen (v1.19.2)
+-----> Setting up <default-ubuntu-1404>...
+       Finished setting up <default-ubuntu-1404> (0m0.00s).
+-----> Verifying <default-ubuntu-1404>...
+[...]
+
+  Command curl
+     ✔  http://localhost:8080 stdout should match /Authentication required/
+
+Test Summary: 1 successful, 0 failures, 0 skipped
+       Finished verifying <default-ubuntu-1404> (0m0.32s).
+-----> Kitchen is finished. (0m2.30s)
+```
+
+Success!
+
+<!-- SLIDE -->
+
+# Review these last changes
+
+```ruby ~/jenkins/recipes/default.rb
+[...]
+package 'software-properties-common'
+
+# TODO: how do you test for this?
+execute 'add-apt-repository ppa:openjdk-r/ppa'
+
+# TODO: this is second time that you send an apt-get update
+execute 'apt-get update'
+
+package 'openjdk-8-jre-headless'
+
+package 'jenkins'
+
+service 'jenkins' do
+  action [ :enable, :start ]
+end
+```
+
+<!-- SLIDE -->
+
+# Resolve these two issues
+
+<% unstyled_list do %>
+  <% icon_list_item('square-o') do %>
+    `execute 'add-apt-repository ppa:openjdk-r/ppa'`
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Two `execute 'apt-get update'`
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# A resource can define tests or guards
+
+A guard property can be used to evaluate the state of a node during the execution phase of the chef-client run. Based on the results of this evaluation, a guard property is then used to tell the chef-client if it should continue executing a resource.
+
+* `only_if` - the command/block provided returns a zero or true
+* `not_if` - the command/block provided returns a non-zero or false
+
+[https://docs.chef.io/resource_reference.html#guards](https://docs.chef.io/resource_reference.html#guards)
+
+<!-- SLIDE -->
+
+We want to add an apt repository if the apt repository already exists. An apt repository will create a new file based on the name in `/etc/apt/sources.list.d/`.
+
+```ruby ~/jenkins/recipes/default.rb
+[...]
+execute 'add-apt-repository ppa:openjdk-r/ppa' do
+  not_if do
+    File.exist?('/etc/apt/sources.list.d/openjdk-r-ppa-trusty.list')
+  end
+  notifies :run, 'execute[apt-get update]', :immediately
+end
+```
+
+<!-- SLIDE -->
+
+# Solve the two apt-get updates
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    `execute 'add-apt-repository ppa:openjdk-r/ppa'`
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Two `execute 'apt-get update'`
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Remove the first apt-get update
+
+```ruby ~/jenkins/recipes/default.rb
+[...]
+package 'software-properties-common'
+
+# REMOVE:
+# execute 'apt-get update' do
+#   action :nothing
+# end
+
+execute 'add-apt-repository ppa:openjdk-r/ppa' do
+  not_if do
+    File.exist?('/etc/apt/sources.list.d/openjdk-r-ppa-trusty.list')
+  end
+  notifies :run, 'execute[apt-get update]', :immediately
+end
+
+execute 'apt-get update' do
+  action :nothing
+end
+
+package 'openjdk-8-jre-headless'
+
+package 'jenkins'
+
+service 'jenkins' do
+  action [ :start, :enable ]
+end
+```
+
+<!-- SLIDE -->
+
+# Recipe converges correctly
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    `execute 'add-apt-repository ppa:openjdk-r/ppa'`
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    Two `execute 'apt-get update'`
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Complete Recipe
+
+```rubh ~/jenkins/recipes/default.rb
+remote_file '/tmp/jenkins-ci.org.key' do
+  source 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
+  notifies :run, 'execute[apt-key add /tmp/jenkins-ci.org.key]', :immediately
+end
+
+execute 'apt-key add /tmp/jenkins-ci.org.key' do
+  action :nothing
+end
+
+file '/etc/apt/sources.list.d/jenkins.list' do
+  content 'deb http://pkg.jenkins.io/debian-stable binary/'
+  notifies :run, 'execute[apt-get update]', :immediately
+end
+
+package 'software-properties-common'
+
+execute 'add-apt-repository ppa:openjdk-r/ppa' do
+  not_if { File.exist?('/etc/apt/sources.list.d/openjdk-r-ppa-trusty.list' }
+  notifies :run, 'execute[apt-get update]', :immediately
+end
+
+execute 'apt-get update' do
+  action :nothing
+end
+
+package 'openjdk-8-jre-headless'
+
+package 'jenkins'
+
+service 'jenkins' do
+  action [ :start, :enable ]
+end
+```
+
+<!-- SLIDE -->
+
+# Converge
+
+This last converge should show that no resources have updated.
+
+```bash ~/jenkins
+$ kitchen converge
+-----> Starting Kitchen (v1.19.2)
+       Converging 9 resources
+       Recipe: jenkins::fourth_step
+         * remote_file[/tmp/jenkins-ci.org.key] action create (up to date)
+         * execute[apt-key add /tmp/jenkins-ci.org.key] action nothing (skipped due to action :nothing)
+         * file[/etc/apt/sources.list.d/jenkins.list] action create (up to date)
+         * apt_package[software-properties-common] action install (up to date)
+         * execute[add-apt-repository ppa:openjdk-r/ppa] action run (skipped due to not_if)
+         * execute[apt-get update] action nothing (skipped due to action :nothing)
+         * apt_package[openjdk-8-jre-headless] action install (up to date)
+         * apt_package[jenkins] action install (up to date)
+         * service[jenkins] action start (up to date)
+         * service[jenkins] action enable (up to date)
+
+       Running handlers:
+       Running handlers complete
+       Chef Client finished, 0/10 resources updated in 11 seconds
+       Finished converging <default-ubuntu-1404> (0m15.45s).
+-----> Kitchen is finished. (0m17.46s)
+```
+
+<!-- SLIDE -->
+
+# Success!
+
+Congratulations you used Chef to install Jenkins on Ubuntu 14.04 despite all the issues that stood in your way. But the work is not done. There is more that you can learn by reviewing community cookbooks.
+But let's try to simplify this further...
+
+<!-- SLIDE -->
+
+# Agenda
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    Login to workstation / Setup your workstation
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    Create a cookbook and write a test
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    Convert the Jenkins installation instructions
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    (SPOILER ALERT) Workaround installation of Java 8 on Ubuntu 14.04
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    Review and refactor with community cookbooks
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Simplify
+
+Where would you start looking to simplify this code?
+
+<!-- SLIDE -->
+
+# When setting up Jenkins in the apt repository
+
+```ruby ~/jenkins/recipes/default.rb
+
+remote_file '/tmp/jenkins-ci.org.key' do
+  source 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
+  notifies :run, 'execute[apt-key add /tmp/jenkins-ci.org.key]', :immediately
+end
+
+execute 'apt-key add /tmp/jenkins-ci.org.key' do
+  action :nothing
+end
+
+file '/etc/apt/sources.list.d/jenkins.list' do
+  content 'deb http://pkg.jenkins.io/debian-stable binary/'
+  notifies :run, 'execute[apt-get update]', :immediately
+end
+
+[...]
+```
+
+<!-- SLIDE -->
+
+# When installing the Java requirement
+
+```ruby ~/jenkins/recipes/default.rb
+[...]
+
+package 'software-properties-common'
+
+execute 'add-apt-repository ppa:openjdk-r/ppa' do
+  not_if do
+    File.exist?('/etc/apt/sources.list.d/openjdk-r-ppa-trusty.list')
+  end
+  notifies :run, 'execute[apt-get update]', :immediately
+end
+
+execute 'apt-get update' do
+  action :nothing
+end
+
+package 'openjdk-8-jre-headless'
+
+[...]
+```
+
+<!-- SLIDE -->
+
+# Refactoring
+
+<% unstyled_list do %>
+  <% icon_list_item('square-o') do %>
+    When setting up Jenkins in the apt repository...
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    When installing the Java requirement...
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Discover how the community did it
+
+[https://supermarket.chef.io/cookbooks/jenkins](https://supermarket.chef.io/cookbooks/jenkins)
+
+* Search the supermarket for Jenkins cookbook
+* Read the README!
+* View the source
+
+<!-- SLIDE -->
+
+# Jenkins Community Cookbook
+
+Within the Jenkins cookbook you will find the use of the `apt_repository` resource which started as a custom resource in the apt community cookbook but is now a core Chef resource.
+
+[https://docs.chef.io/resource_apt_repository.html](https://docs.chef.io/resource_apt_repository.html)
+
+<!-- SLIDE -->
+
+# What does this code block do?
+
+```ruby ~/jenkins-community-cookbook/recipes/_master_package.rb
+case node['platform_family']
+when 'debian'
+  package 'apt-transport-https'
+
+  apt_repository 'jenkins' do
+    uri          node['jenkins']['master']['repository']
+    distribution 'binary/'
+    key          node['jenkins']['master']['repository_key']
+    unless node['jenkins']['master']['repository_keyserver'].nil?
+      keyserver    node['jenkins']['master']['repository_keyserver']
+    end
+  end
+
+  [...]
+```
+
+<!-- SLIDE -->
+
+# Refactor the default recipe
+
+```ruby ~/jenkins/recipes/default.rb
+#remote_file '/tmp/jenkins-ci.org.key' do
+#  source 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
+#  notifies :run, 'execute[apt-key add /tmp/jenkins-ci.org.key]', :immediately
+#end
+#
+#execute 'apt-key add /tmp/jenkins-ci.org.key' do
+#  action :nothing
+#end
+#
+#file '/etc/apt/sources.list.d/jenkins.list' do
+#  content 'deb http://pkg.jenkins.io/debian-stable binary/'
+#  notifies :run, 'execute[apt-get update]', :immediately
+#end
+package 'apt-transport-https'
+
+apt_repository 'jenkins' do
+  uri node['jenkins']['master']['repository']
+  distribution node['jenkins']['master']['distribution']
+  key  node['jenkins']['master']['repository_key']
+end
+[...]
+```
+
+We're utilizing attributes instead of hard-coding values...
+
+<!-- SLIDE -->
+
+# Create an attributes file
+
+```bash ~/jenkins
+$ chef generate attribute default
+```
+
+<!-- SLIDE -->
+
+# Define the repository attributes
+
+```ruby ~/jenkins/attributes/default.rb
+default['jenkins']['master']['repository'] = 'https://pkg.jenkins.io/debian/'
+default['jenkins']['master']['distribution'] = 'binary/'
+default['jenkins']['master']['repository_key'] = 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
+```
+
+<!-- SLIDE -->
+
+# Converge it on a new test instance
+
+```bash ~/jenkins
+$ kitchen destroy && kitchen converge
+```
+
+Converging an existing test instance does not give us the confidence that it will work from the very beginning.
+
+<!-- SLIDE -->
+
+# Refactoring
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    When setting up Jenkins in the apt repository...
+  <% end %>
+  <% icon_list_item('square-o') do %>
+    When installing the Java requirement...
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Refactoring for Java...
+
+How does the Jenkins cookbook install Java?
+
+```ruby ~/jenkins-community-cookbook/recipes/java.rb
+
+# [...]
+Chef::Log.warn('The jenkins::java recipe has been deprecated. We recommend adding the Java coobook to the runlist of your jenkins node instead as it provides more tuneables')
+
+[...]
+```
+
+<!-- SLIDE -->
+
+# Discover how the community did it
+
+[https://supermarket.chef.io/cookbooks/java](https://supermarket.chef.io/cookbooks/java)
+
+* Search the supermarket for Java cookbook
+* Read the README!
+* View the source
+
+<!-- SLIDE -->
+
+# Define the Java cookbook as a dependency
+
+```ruby ~/jenkins/metadata.rb
+
+name 'jenkins'
+maintainer 'The Authors'
+maintainer_email 'you@example.com'
+license 'All Rights Reserved'
+description 'Installs/Configures jenkins'
+long_description 'Installs/Configures jenkins'
+version '0.1.0'
+chef_version '>= 12.1' if respond_to?(:chef_version)
+
+depends 'java'
+```
+
+<!-- SLIDE -->
+
+# Include the Java cookbook's default recipe
+
+```ruby ~/jenkins/default.rb
+[...]
+
+# REMOVE:
+# package 'software-properties-common'
+#
+# execute 'add-apt-repository ppa:openjdk-r/ppa' do
+#   not_if do
+#     File.exist?('/etc/apt/sources.list.d/openjdk-r-ppa-trusty.list')
+#   end
+#   notifies :run, 'execute[apt-get update]', :immediately
+# end
+#
+# execute 'apt-get update' do
+#   action :nothing
+# end
+#
+# package 'openjdk-8-jre-headless'
+
+include_recipe 'java'
+
+[...]
+```
+
+<!-- SLIDE -->
+
+# Define the required attributes
+
+Add the install flavor, package, and version.
+
+```ruby ~/jenkins/attributes/default.rb
+default['jenkins']['master']['repository'] = 'https://pkg.jenkins.io/debian/'
+default['jenkins']['master']['distribution'] = 'binary/'
+default['jenkins']['master']['repository_key'] = 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
+
+default['java']['install_flavor'] = 'openjdk'
+default['java']['openjdk_packages'] = [ 'openjdk-8-jre-headless' ]
+default['java']['jdk_version'] = '8'
+```
+
+<!-- SLIDE -->
+
+# Converge it on a new test instance
+
+```bash ~/jenkins
+$ kitchen destroy && kitchen converge
+```
+
+Converging an existing test instance does not give us the confidence that it will work from the very beginning.
+
+<!-- SLIDE -->
+
+# The final attributes and recipe
+
+The attributes describes how to install Jenkins and Java
+
+```ruby ~/jenkins/attributes/default.rb
+default['jenkins']['master']['repository'] = 'https://pkg.jenkins.io/debian/'
+default['jenkins']['master']['distribution'] = 'binary/'
+default['jenkins']['master']['repository_key'] = 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
+
+default['java']['install_flavor'] = 'openjdk'
+default['java']['openjdk_packages'] = [ 'openjdk-8-jre-headless' ]
+default['java']['jdk_version'] = '8'
+```
+
+The recipe adds the Jenkins repository, installs Java, and then installs Jenkins.
+
+```ruby ~/jenkins/recipes/default.rb
+package 'apt-transport-https'
+
+apt_repository 'jenkins' do
+  uri node.default['jenkins']['master']['repository']
+  distribution node.default['jenkins']['master']['repository']
+  key  node.default['jenkins']['master']['repository_key']
+end
+
+include_recipe 'java'
+
+package 'jenkins'
+
+service 'jenkins' do
+  action [ :start, :enable ]
+end
+```
+
+
+<!-- SLIDE -->
+
+# Refactoring
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    When setting up Jenkins in the apt repository...
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    When installing the Java requirement...
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Agenda
+
+<% unstyled_list do %>
+  <% icon_list_item('check-square-o') do %>
+    Login to workstation / Setup your workstation
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    Create a cookbook and write a test
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    Convert the Jenkins installation instructions
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    (SPOILER ALERT) Workaround installation of Java 8 on Ubuntu 14.04
+  <% end %>
+  <% icon_list_item('check-square-o') do %>
+    Review and refactor with community cookbooks
+  <% end %>
+<% end %>
+
+<!-- SLIDE -->
+
+# Congratulations
+
+You created a Jenkins cookbook using resources that employ effective use of notifications and guards. Then explored community cookbooks and refactored your initial implementation to use more powerful resources and a community cookbook recipe.
+
+<!-- SLIDE -->
+
+# Questions
+
+What questions can I answer for?
+
+<!-- SLIDE -->
+
+# Thank You
+
+## Larry Eichenbaum -- Solutions Architect
+
+* Email: larryebaum@chef.io
+* Twitter: @larryebaum
+* LinkedIn: larryebaum

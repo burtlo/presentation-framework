@@ -1,0 +1,24 @@
+doctype html
+html lang="en"
+  head
+    title= [current_page.title, 'Learn Chef'].compact.join(' | ')
+    link rel='icon' type='image/x-icon' href='/favicon.ico'
+    = canonical_link_tag current_page.url
+    base href="#{current_page.url}"
+    meta charset='utf-8'
+    meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=no'
+
+    meta content='IE=edge,chrome=1' http-equiv='X-UA-Compatible'
+
+    = stylesheet_link_tag css_path('reveal.css')
+    = stylesheet_link_tag css_path('white.css')
+    / = stylesheet_link_tag css_path('application.css')
+    = stylesheet_link_tag css_path('terminal.css')
+
+  body
+    .reveal
+      .slides
+        = yield
+    = javascript_include_tag js_path('reveal.js')
+    script
+      | Reveal.initialize({ slideNumber: true, history: true, center: true });
