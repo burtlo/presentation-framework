@@ -3,11 +3,35 @@ title: Using Community Cookbooks
 # Using Community Cookbooks
 ## Jenkins on Ubuntu 14.04
 
----
+<!-- SLIDE -->
 
-**Larry Eichenbaum -- Solutions Architect**
+# PARSES CORRECTLY
 
-**_larryebaum@chef.io | @larryebaum | LinkedIn: larryebaum_**
+```ruby title:Example
+remote_file '/var/www/customers/public_html/index.html' do
+  source 'http://somesite.com/index.html'
+  owner 'web_admin'
+  group 'web_admin'
+  mode '0755'
+  action :create
+end
+```
+
+<!-- SLIDE -->
+
+# Titled
+
+THIS CAUSES AN ERROR
+
+```ruby title:Example
+remote_file '/var/www/customers/public_html/index.html' do
+  source 'http://somesite.com/index.html'
+  owner 'web_admin'
+  group 'web_admin'
+  mode '0755'
+  action :create
+end
+```
 
 <!-- SLIDE -->
 
@@ -98,8 +122,7 @@ The best editing experience is, of course, going to be on your local workstation
 
 # Login to workstation
 
-```bash
-# LOCAL WORKSTATION
+```shell LOCAL WORKSTATION
 $ ssh ADDRESS -l USER
 The authenticity of host '54.209.164.144 (54.209.164.144)' can't be established.RSA key fingerprint is SHA256:tKoTsPbn6ER9BLThZqntXTxIYem3zV/iTQWvhLrBIBQ.Are you sure you want to continue connecting (yes/no)? yes
 chef@54.209.164.144's password: PASSWORD
@@ -346,7 +369,7 @@ Downloads a file from a remote system and then adds that file as a apt-key
 
 A remote_file resource block manages files by using files that exist remotely. For example, to write the home page for an Apache website:
 
-```ruby title:Example
+```ruby title:EXAMPLE
 remote_file '/var/www/customers/public_html/index.html' do
   source 'http://somesite.com/index.html'
   owner 'web_admin'
@@ -1025,7 +1048,7 @@ end
 
 # Complete Recipe
 
-```rubh ~/jenkins/recipes/default.rb
+```ruby ~/jenkins/recipes/default.rb
 remote_file '/tmp/jenkins-ci.org.key' do
   source 'https://pkg.jenkins.io/debian/jenkins-ci.org.key'
   notifies :run, 'execute[apt-key add /tmp/jenkins-ci.org.key]', :immediately
@@ -1478,9 +1501,3 @@ What questions can I answer for?
 <!-- SLIDE -->
 
 # Thank You
-
-## Larry Eichenbaum -- Solutions Architect
-
-* Email: larryebaum@chef.io
-* Twitter: @larryebaum
-* LinkedIn: larryebaum

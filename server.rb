@@ -1,3 +1,4 @@
+# encoding: utf-8
 require 'sinatra'
 require 'slim'
 require 'yaml'
@@ -19,22 +20,7 @@ get '/css/terminal.css' do
 end
 
 # Present the community-cookbooks presentation
-get '/:presentation_name' do
-
-
-  # build the layout
-  #     - css
-  #     - javascript
-
-  # slim :presentation
-
-  # parse the presentation
-  #     - process it with erb
-  #     - process it with rmd
-  #     - process it with md
-  #     - return the result
-  #
-  # insert the presentation in the layout
+get '/presentations/:presentation_name' do
   reveal current_page
 end
 
@@ -49,11 +35,11 @@ def canonical_link_tag(url)
 end
 
 def current_page
-  @current_page ||= Page.new(params[:presentation_name])
+  @current_page ||= Page.new(params[:presentation_name],request.env['HTTP_HOST'])
 end
 
 def css_path(file)
-  File.join('css',file)
+  File.join('/css',file)
 end
 
 def stylesheet_link_tag(css_path)
@@ -61,11 +47,12 @@ def stylesheet_link_tag(css_path)
 end
 
 def js_path(file)
-  File.join('js',file)
+  File.join('/js',file)
 end
 
 def javascript_include_tag(name)
-  "<script async='true' type='text/javascript' src='#{name}'></script>"
+  # "<script async='true' type='text/javascript' src='#{name}'></script>"
+  "<script type='text/javascript' src='#{name}'></script>"
 end
 
 class NoPage
@@ -75,13 +62,14 @@ class NoPage
 end
 
 class Page
-  def initialize(name)
+  def initialize(name,base_url)
     @name = name
+    @base_url = base_url
     @front_matter, @presentation_content = extract_front_matter(File.read(path))
   end
 
   def url
-    "http://localhost:4567/#{@name}"
+    "http://#{@base_url}/#{@name}"
   end
 
   def title
@@ -93,7 +81,7 @@ class Page
   end
 
   def extract_front_matter(content)
-    front_matter, presentation_content = content.split(/^---$/,2)
+    front_matter, presentation_content = content.split(/^---$/u,2)
     [ FrontMatter.parse(front_matter), presentation_content ]
   end
 
@@ -115,30 +103,29 @@ class Page
     end
   end
 
-  class VegasRender < Redcarpet::Render::HTML
+  class VegasRender < Redcarpet::Render::XHTML
     def preprocess(full_document)
       MarkdownParser.parse_document full_document
     end
   end
 
+  # Take the content and process it for ERB, then split up the slides, then
+  # run it through a markdown parser that cares a little more about your code
+  # blocks and then finally stitch it all back up.
   def render
-    local_content = @presentation_content
+    local_content = @presentation_content.force_encoding(Encoding::UTF_8)
 
-    #     - process it with erb
     erb_render = ERB.new(local_content)
     results = erb_render.result(Helpers.new.get_binding)
 
-    renderer = VegasRender.new({fenced_code_blocks: true, smartypants: false, tables: true})
+    renderer = VegasRender.new({fenced_code_blocks: true, smartypants: false, tables: true, escape_html: false })
     markdown = Redcarpet::Markdown.new(renderer, extensions = {})
 
     #     - process it for slide markers
     results.split('<!-- SLIDE -->').map do |slide|
       "<section>\n#{markdown.render(slide)}</section>"
     end.join
-    #     - process it with md
 
-    #     - return the result
-    #
   end
 end
 
@@ -181,7 +168,7 @@ module MarkdownParser
       metadata = get_metadata(Regexp.last_match(2).to_s)
       code = Regexp.last_match(3).to_s
       trimmed_code = code.gsub("\n#{spacing}","\n")[spacing.length..-1]
-      "#{spacing}#{Highlighter.highlight(trimmed_code, metadata)}"
+      "\n#{spacing}#{Highlighter.highlight(trimmed_code, metadata)}"
     end
   end
 
