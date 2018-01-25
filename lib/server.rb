@@ -6,26 +6,24 @@ require 'redcarpet'
 require 'rouge'
 require 'sass'
 
+set :root, File.join(File.dirname(__FILE__), '..')
+set(:views) { File.join(root, 'lib', 'views') }
+
 set :public_folder, File.join(File.dirname(__FILE__), '/static')
 
 set(:css_dir) { File.join(public_folder, 'css') }
 set(:js_dir) { File.join(public_folder, 'js') }
 
 get '/' do
-  slim :index
+  reveal current_page
 end
 
 get '/css/terminal.css' do
   scss :'sass/terminal'
 end
 
-# Present the community-cookbooks presentation
-get '/presentations/:presentation_name' do
-  reveal current_page
-end
-
 def reveal(page)
-  Slim::Template.new("views/presentation.slim", { disable_escape: true }).render(self) do
+  Slim::Template.new("#{settings.views}/presentation.slim", { disable_escape: true }).render(self) do
     page.render
   end
 end
@@ -51,7 +49,6 @@ def js_path(file)
 end
 
 def javascript_include_tag(name)
-  # "<script async='true' type='text/javascript' src='#{name}'></script>"
   "<script type='text/javascript' src='#{name}'></script>"
 end
 
@@ -86,7 +83,9 @@ class Page
   end
 
   def path
-    "source/presentations/#{@name}/index.html.rmd.erb"
+    # TODO: provide support so that it will run this one when working with it locally, but using this other one when inside habitat. This could be detected by the env or either are checked for when performed.
+    "presentation.html.rmd.erb"
+    # "source/presentations/presentation.html.rmd.erb"
   end
 
   class Helpers
@@ -94,8 +93,14 @@ class Page
       binding
     end
 
-    def unstyled_list
-      "THIS IS SUPPOSE TO BE A LIST"
+    # TODO: This does not work
+    def unstyled_list(&block)
+      "<ul style='list-style-type: none;'>#{instance_eval(&block)}</ul>"
+    end
+
+    # TODO: This does not work
+    def icon_list_item(foundation_icon, &block)
+      "<li><i class='fa fa-#{foundation_icon}' style='min-width: 21px;'></i>&nbsp;#{instance_eval(&block)}</li>"
     end
 
     def fp(filepath)

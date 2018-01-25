@@ -5,36 +5,6 @@ title: Using Community Cookbooks
 
 <!-- SLIDE -->
 
-# PARSES CORRECTLY
-
-```ruby title:Example
-remote_file '/var/www/customers/public_html/index.html' do
-  source 'http://somesite.com/index.html'
-  owner 'web_admin'
-  group 'web_admin'
-  mode '0755'
-  action :create
-end
-```
-
-<!-- SLIDE -->
-
-# Titled
-
-THIS CAUSES AN ERROR
-
-```ruby title:Example
-remote_file '/var/www/customers/public_html/index.html' do
-  source 'http://somesite.com/index.html'
-  owner 'web_admin'
-  group 'web_admin'
-  mode '0755'
-  action :create
-end
-```
-
-<!-- SLIDE -->
-
 # Community Cookbooks
 
 * How many of you know what a Chef cookbook is?
