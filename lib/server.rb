@@ -15,25 +15,39 @@ set(:css_dir) { File.join(public_folder, 'css') }
 set(:js_dir) { File.join(public_folder, 'js') }
 
 get '/' do
-  reveal current_page
+  slim :index
 end
 
 get '/css/terminal.css' do
   scss :'sass/terminal'
 end
 
+get '/remarkjs' do
+  remark current_page('remarkjs')
+end
+
+def remark(page)
+  Slim::Template.new("#{settings.views}/remarkjs.slim", { disable_escape: true }).render(self) do
+    page.markdown
+  end
+end
+
+get '/revealjs' do
+  reveal current_page('revealjs')
+end
+
 def reveal(page)
-  Slim::Template.new("#{settings.views}/presentation.slim", { disable_escape: true }).render(self) do
+  Slim::Template.new("#{settings.views}/revealjs.slim", { disable_escape: true }).render(self) do
     page.render
   end
 end
 
-def canonical_link_tag(url)
-  "<link rel='canonical' href='#{url}' />"
+def current_page(engine = 'revealjs')
+  @current_page ||= Page.new(engine,request.env['HTTP_HOST'])
 end
 
-def current_page
-  @current_page ||= Page.new(params[:presentation_name],request.env['HTTP_HOST'])
+def canonical_link_tag(url)
+  "<link rel='canonical' href='#{url}' />"
 end
 
 def css_path(file)
@@ -84,7 +98,7 @@ class Page
 
   def path
     # TODO: provide support so that it will run this one when working with it locally, but using this other one when inside habitat. This could be detected by the env or either are checked for when performed.
-    "presentation.html.rmd.erb"
+    "presentation-#{@name}.html.rmd.erb"
     # "source/presentations/presentation.html.rmd.erb"
   end
 
@@ -130,8 +144,22 @@ class Page
     results.split('<!-- SLIDE -->').map do |slide|
       "<section>\n#{markdown.render(slide)}</section>"
     end.join
-
   end
+
+  def markdown
+    local_content = @presentation_content.force_encoding(Encoding::UTF_8)
+
+    erb_render = ERB.new(local_content)
+    results = erb_render.result(Helpers.new.get_binding)
+
+    renderer = VegasRender.new({fenced_code_blocks: true, smartypants: false, tables: true, escape_html: false })
+    markdown = Redcarpet::Markdown.new(renderer, extensions = {})
+
+    #     - replace our SLIDE indicator with the one supported by remark
+    results.split('<!-- SLIDE -->').map { |slide| slide }.join('---')
+  end
+
+
 end
 
 class FrontMatter
