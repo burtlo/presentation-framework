@@ -156,7 +156,7 @@ class Page
     markdown = Redcarpet::Markdown.new(renderer, extensions = {})
 
     #     - replace our SLIDE indicator with the one supported by remark
-    results.split('<!-- SLIDE -->').map { |slide| slide }.join('---')
+    results.split('<!-- SLIDE -->').map { |slide| markdown.render(slide) }.join("\n\n---\n\n")
   end
 
 
